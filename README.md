@@ -1,36 +1,56 @@
-# Proyecto AE - Autenticación y Firma Digital con Viafirma
+# Proyecto AE - Sede Electrónica con Firma Digital Dual (Viafirma)
 
 ## 📋 Descripción General
 
-Aplicación web Java que implementa autenticación con certificado digital a través de Viafirma. Los usuarios pueden autenticarse, rellenar un formulario y generar un PDF firmado digitalmente.
+Aplicación web Java que implementa una **Sede Electrónica** completa con autenticación mediante certificado digital y **firma dual de expedientes** (PDF + XML) a través de la plataforma Viafirma. El sistema permite a los usuarios autenticarse con su certificado FNMT/CERES, rellenar un formulario administrativo y generar un expediente digital compuesto por dos documentos firmados simultáneamente en un solo lote.
+
+### Características Principales
+
+- 🔐 **Autenticación con Certificado Digital** (FNMT, CERES) vía Viafirma
+- 📄 **Firma Dual en Lote** — PDF (PAdES-B) + XML (XAdES-B) en una sola operación
+- 🏛️ **Generación de PDF Premium** — Comprobante de firma con datos del certificado, validación técnica y sello QR
+- 📊 **Expediente XML Técnico** — Metadatos estructurados para interoperabilidad entre administraciones
+- ✅ **Validación Oficial** — Enlace directo al validador de Viafirma
+- 🎨 **Interfaz Premium** — Diseño moderno con tarjetas duales de descarga
 
 ## 🏗️ Arquitectura
 
-### Flujo de Autenticación
+### Flujo Completo
 ```
-1. Usuario accede a index.jsp
-2. Hace clic en "Acceder con Certificado Digital"
-3. Se redirige a LoginServlet
-4. LoginServlet contacta con API de Viafirma
-5. Usuario se autentica en Viafirma con su certificado
-6. Viafirma redirige a CallbackServlet con código
-7. CallbackServlet obtiene datos del certificado
-8. Usuario ve sus datos en datos.jsp
-9. Completa formulario y hace clic "Firmar"
-10. FirmaServlet genera PDF y redirige a confirmacion.jsp
+1.  Usuario accede a index.jsp (Sede Electrónica)
+2.  Clic en "Acceder con Certificado Digital"
+3.  LoginServlet → API Viafirma (prepareAuthentication)
+4.  Usuario se autentica con su certificado en Viafirma
+5.  Viafirma redirige a CallbackServlet con código
+6.  CallbackServlet obtiene datos del certificado (getCertificate)
+7.  Usuario ve sus datos en datos.jsp
+8.  Completa formulario y hace clic "Generar y Firmar Documento"
+9.  FirmaServlet genera PDF Premium + XML técnico
+10. ViafirmaService.prepareSignature() → Firma Dual en Lote (PAdES + XAdES)
+11. Usuario firma en Viafirma con su certificado
+12. FirmaCallbackServlet captura los enlaces de descarga
+13. confirmacion_firma.jsp muestra tarjetas duales de descarga
 ```
 
-### Componentes
+### Componentes del Backend
 
-- **LoginServlet**: Inicia el flujo de autenticación
-- **CallbackServlet**: Maneja el callback de Viafirma
-- **FirmaServlet**: Genera PDF con datos del certificado
-- **ViafirmaService**: Servicio centralizado para integración con Viafirma
-- **JSP Pages**: 
-  - `index.jsp` - Página de inicio
-  - `datos.jsp` - Formulario con datos del usuario
-  - `confirmacion.jsp` - Confirmación de firma exitosa
-  - `error.jsp` - Página de errores
+| Componente | Responsabilidad |
+|---|---|
+| `LoginServlet` | Inicia flujo de autenticación con Viafirma |
+| `CallbackServlet` | Procesa el callback post-autenticación, extrae datos del certificado |
+| `FirmaServlet` | Genera PDF Premium + XML técnico, lanza firma dual |
+| `FirmaCallbackServlet` | Captura enlaces de documentos firmados de Viafirma |
+| `DescargarPdfFirmadoServlet` | Gestión de descarga de documentos firmados |
+| `ViafirmaService` | Servicio centralizado: autenticación, firma en lote, descarga |
+
+### Páginas JSP
+
+| Página | Función |
+|---|---|
+| `index.jsp` | Página principal de la Sede Electrónica |
+| `datos.jsp` | Formulario con datos pre-rellenados del certificado |
+| `confirmacion_firma.jsp` | Resultado con tarjetas duales de descarga (PDF + XML) |
+| `error.jsp` | Gestión de errores |
 
 ## 🔧 Configuración
 
@@ -94,12 +114,11 @@ private static final String API_BASE_URL = "https://viafirma.com/signservices";
 
 El proyecto usa Maven. Las dependencias principales son:
 
-```xml
-<!-- Viafirma API (generada con OpenAPI) -->
-<!-- iText 7 para generación de PDFs -->
-<!-- Apache HttpComponents para peticiones HTTP -->
-<!-- Jackson para serialización JSON -->
-```
+- **Viafirma API** — Cliente generado con OpenAPI Generator
+- **iText 7** — Generación de PDFs Premium con tablas, colores y tipografía
+- **Apache HttpComponents** — Peticiones HTTP a la API
+- **Jackson** — Serialización/deserialización JSON
+- **Java Servlet API 4.0** — Servlets y JSP
 
 Ver `pom.xml` para la lista completa.
 
@@ -116,7 +135,7 @@ mvn clean package
 ```
 
 ### Ejecutar en NetBeans
-```bash
+```
 F6 o Run Project
 ```
 
@@ -130,19 +149,23 @@ mvn tomcat7:run
 1. **Acceder a la aplicación**
    - URL: `http://localhost:8084/Proyecto_AE/`
 
-2. **Acceder**
+2. **Autenticarse**
    - Hacer clic en "Acceder con Certificado Digital"
-   - Seleccionar certificado en Viafirma
+   - Seleccionar certificado en Viafirma (FNMT/CERES)
    - Confirmar autenticación
 
-3. **Firmar documento**
-   - Revisar datos del certificado (pre-rellenados)
+3. **Firmar Expediente Dual**
+   - Revisar datos del certificado (pre-rellenados automáticamente)
    - Ingresar motivo de la solicitud
    - Marcar los checkboxes de consentimiento
    - Hacer clic en "Generar y Firmar Documento"
+   - Firmar con certificado digital en la pasarela de Viafirma
 
-4. **Descargar PDF** (en desarrollo)
-   - En la página de confirmación, descargar el PDF generado
+4. **Descargar Documentos Firmados**
+   - En la página de confirmación, descargar el **PDF firmado** (estándar PAdES)
+   - Descargar el **XML firmado** (estándar XAdES)
+   - Abrir la vista previa del documento
+   - Validar la firma en el portal oficial de Viafirma
 
 ## 📁 Estructura de Directorios
 
@@ -151,40 +174,70 @@ Proyecto_AE/
 ├── src/
 │   ├── main/
 │   │   ├── java/
-│   │   │   ├── com/mycompany/proyecto_ae/
-│   │   │   └── servlets/
-│   │   │       ├── LoginServlet.java
-│   │   │       ├── CallbackServlet.java
-│   │   │       ├── FirmaServlet.java
-│   │   │       └── ViafirmaService.java
+│   │   │   ├── com/example/proyecto_ae/
+│   │   │   │   ├── config/
+│   │   │   │   │   └── AppConstants.java
+│   │   │   │   ├── services/
+│   │   │   │   │   └── ViafirmaService.java
+│   │   │   │   └── servlets/
+│   │   │   │       ├── auth/
+│   │   │   │       │   ├── LoginServlet.java
+│   │   │   │       │   └── CallbackServlet.java
+│   │   │   │       └── firma/
+│   │   │   │           ├── FirmaServlet.java
+│   │   │   │           ├── FirmaCallbackServlet.java
+│   │   │   │           └── DescargarPdfFirmadoServlet.java
+│   │   │   └── org/openapitools/client/  (API Viafirma generada)
 │   │   └── webapp/
-│   │       ├── index.jsp
-│   │       ├── datos.jsp
-│   │       ├── confirmacion.jsp
-│   │       ├── error.jsp
+│   │       ├── WEB-INF/jsp/pages/
+│   │       │   ├── index.jsp
+│   │       │   ├── datos.jsp
+│   │       │   ├── confirmacion_firma.jsp
+│   │       │   └── error.jsp
 │   │       └── estilos.css
 │   └── test/
 ├── pom.xml
-└── README.md
+├── README.md
+└── NETBEANS-GUIDE.md
 ```
+
+## 🔐 Firma Dual — Detalles Técnicos
+
+### PDF (PAdES-B Level)
+- Generado con **iText 7**
+- Contiene: datos del certificado, estado de validación técnica, metadatos temporales
+- Sello QR oficial de Viafirma en la esquina inferior izquierda
+- Formato legible para humanos
+
+### XML (XAdES-B Level)
+- Estructura `<expediente_digital>` con metadatos y datos del firmante
+- Pensado para **interoperabilidad** entre administraciones públicas
+- Formato procesable por máquinas (Sede Electrónica, registros)
+
+### Proceso de Firma en Lote
+`ViafirmaService.prepareSignature()` envía ambos documentos a Viafirma en una sola petición. El SDK determina automáticamente el perfil de firma según la extensión del archivo:
+- `.pdf` → PAdES-B
+- `.xml` → XAdES-B
 
 ## 🔒 Seguridad
 
 ### Implementado
-- ✅ Validación de parámetros
-- ✅ Verificación de sesión
-- ✅ Manejo centralizado de credenciales
-- ✅ Manejo de errores robusto
-- ✅ Logs de auditoría
+- ✅ Autenticación con certificado digital cualificado
+- ✅ Firma electrónica avanzada (PAdES + XAdES)
+- ✅ Validación de parámetros en todos los servlets
+- ✅ Verificación de sesión obligatoria
+- ✅ Manejo centralizado de credenciales (variables de entorno)
+- ✅ Manejo de errores robusto con páginas dedicadas
+- ✅ Descarga directa desde Viafirma (sin proxy server-side)
 
 ### Recomendaciones para Producción
 - [ ] Implementar HTTPS (SSL/TLS)
 - [ ] Implementar CSRF tokens
-- [ ] Agregar limite de rate limiting
+- [ ] Agregar rate limiting
 - [ ] Usar WAF (Web Application Firewall)
-- [ ] Implementar logging centralizado
+- [ ] Implementar logging centralizado (SLF4J + Logback)
 - [ ] Agregar monitoreo y alertas
-- [ ] Backup regular de PDFs generados
+- [ ] Backup regular de documentos firmados
 
 ## 🐛 Troubleshooting
 
@@ -196,6 +249,14 @@ Proyecto_AE/
 **Causa**: La sesión expiró (30 minutos) o no hay certificado en sesión.
 **Solución**: Volver a `index.jsp` y autenticarse de nuevo.
 
+### Error 403 al descargar documentos
+**Causa**: Viafirma bloquea descargas server-side sin contexto de sesión.
+**Solución**: Ya resuelto — la app usa enlaces directos que el navegador del usuario abre.
+
+### Vista previa no carga
+**Causa**: Viafirma establece `X-Frame-Options: DENY`, bloqueando iframes.
+**Solución**: Ya resuelto — se usa un botón "Abrir Vista Previa" en nueva pestaña.
+
 ### PDF no se genera
 **Causa**: Sin permisos de escritura en el directorio temporal.
 **Solución**: Verificar permisos de carpeta `%TEMP%/documentos_firmados`
@@ -205,6 +266,11 @@ Proyecto_AE/
 **Solución**: Cambiar puerto en `server.xml` de Tomcat o en la configuración del servidor de NetBeans.
 
 ## 📝 Notas de Desarrollo
+
+### Estándares Implementados
+- **PAdES** (PDF Advanced Electronic Signatures) — ETSI EN 319 142
+- **XAdES** (XML Advanced Electronic Signatures) — ETSI EN 319 132
+- **Ley 6/2020** — Reguladora de determinados aspectos de los servicios electrónicos de confianza
 
 ### Logging
 La aplicación usa `System.out` y `System.err` para logging. Para producción, considera usar SLF4J + Logback:
@@ -219,13 +285,11 @@ logger.error("Error", exception);
 ```
 
 ### Testing
-Para agregar tests unitarios:
 ```bash
 mvn test
 ```
 
 ### Documentación de API
-Para generar documentación:
 ```bash
 mvn javadoc:javadoc
 ```
@@ -240,8 +304,8 @@ Si encuentras problemas:
 
 ## 📄 Licencia
 
-Este proyecto fue generado con Gemini AI y es para uso educativo.
+Este proyecto es para uso educativo — Asignatura de Administración Electrónica (UPO).
 
 ---
 
-**Última actualización**: 26 de abril de 2026
+**Última actualización**: 10 de mayo de 2026
