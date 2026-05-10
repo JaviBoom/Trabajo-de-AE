@@ -13,6 +13,10 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import com.itextpdf.io.image.ImageDataFactory;
+import com.itextpdf.layout.element.Image;
+import java.net.URL;
+import java.net.URLEncoder;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.layout.Document;
@@ -45,18 +49,8 @@ public class FirmaServlet extends HttpServlet {
             return;
         }
 
-        String motivo = request.getParameter("motivo");
         String consent = request.getParameter("consent");
         String participacion = request.getParameter("participacion");
-
-        // Validar parámetros
-        if (motivo == null || motivo.trim().isEmpty()) {
-            System.err.println("ERROR: Motivo vacío");
-            request.setAttribute(AppConstants.REQUEST_ERROR,
-                    AppConstants.MSG_ERROR_MOTIVO_VACIO);
-            request.getRequestDispatcher(AppConstants.PAGE_ERROR).forward(request, response);
-            return;
-        }
 
         if (consent == null || !consent.equals("on")) {
             System.err.println("ERROR: Consentimiento no otorgado");
@@ -78,9 +72,9 @@ public class FirmaServlet extends HttpServlet {
             System.out.println("INFO: Generando PDF para firma");
 
             // 1. Generar PDF con los datos
-            String nombrePDF = generarPDFConDatos(cert, motivo);
-            File pdfFile = new File(System.getProperty("java.io.tmpdir"),
-                    AppConstants.UPLOAD_DIR + "/" + nombrePDF);
+            String nombrePDF = generarPDFConDatos(cert, request);
+            File uploadDir = new File(System.getProperty("java.io.tmpdir"), AppConstants.UPLOAD_DIR);
+            File pdfFile = new File(uploadDir, nombrePDF);
             String rutaPDF = pdfFile.getAbsolutePath();
 
             String sessionId = (String) request.getSession()
@@ -105,41 +99,53 @@ public class FirmaServlet extends HttpServlet {
             // 3. Solicitar firma a Viafirma
             RequestResultDTO firmaResult = viafirmaService.requestSignature(
                     pdfFile,
-                    "Documento de Participación - " + motivo,
+                    "Documento de Participacion",
                     firmaCallbackURL);
 
             // 4. Guardar datos en sesión para usar después
             request.getSession().setAttribute(AppConstants.SESSION_PDF_GENERADO, nombrePDF);
             request.getSession().setAttribute(AppConstants.SESSION_PDF_RUTA, rutaPDF);
-            request.getSession().setAttribute(AppConstants.SESSION_MOTIVO_FIRMA, motivo);
             request.getSession().setAttribute(AppConstants.SESSION_FIRMA_TOKEN,
                     firmaResult.getCode());
 
             // 5. Redirigir a Viafirma para que el usuario firme
-            String firmaUrl = firmaResult.getClientAccess().getDesktopProtocol();
+            String firmaUrl = firmaResult.getClientAccess().getLink();
+            if (firmaUrl == null || firmaUrl.isEmpty()) {
+                firmaUrl = firmaResult.getClientAccess().getDesktopProtocol();
+            }
             System.out.println("INFO: [" + sessionId + "] Redirigiendo a Viafirma para firma: "
                     + firmaUrl);
 
             response.sendRedirect(firmaUrl);
 
-        } catch (Exception e) {
-            System.err.println("ERROR en FirmaServlet: " + e.getMessage());
+        } catch (org.openapitools.client.ApiException e) {
+            String errorMsg = "API Error (" + e.getCode() + "): " + e.getResponseBody();
+            System.err.println("ERROR ApiException en FirmaServlet: " + errorMsg);
             e.printStackTrace();
             request.setAttribute(AppConstants.REQUEST_ERROR,
-                    "Error al preparar la firma: " + e.getMessage());
+                    "Error de Viafirma: " + errorMsg);
+            request.getRequestDispatcher(AppConstants.PAGE_ERROR).forward(request, response);
+        } catch (Exception e) {
+            String errorMsg = e.getMessage();
+            if (errorMsg == null || errorMsg.isEmpty()) {
+                errorMsg = e.getClass().getName();
+            }
+            System.err.println("ERROR en FirmaServlet: " + errorMsg);
+            e.printStackTrace();
+            request.setAttribute(AppConstants.REQUEST_ERROR,
+                    "Error al preparar la firma: " + errorMsg);
             request.getRequestDispatcher(AppConstants.PAGE_ERROR).forward(request, response);
         }
     }
 
     /**
-     * Genera un PDF con los datos del certificado y motivo de la solicitud
+     * Genera un PDF con los datos del certificado
      * 
      * @param cert   Datos del certificado del usuario
-     * @param motivo Motivo de la solicitud
      * @return Nombre del archivo PDF generado
      * @throws Exception Si hay error al generar el PDF
      */
-    private String generarPDFConDatos(CertificateResponseDTO cert, String motivo)
+    private String generarPDFConDatos(CertificateResponseDTO cert, HttpServletRequest request)
             throws Exception {
 
         // Crear directorio si no existe
@@ -173,7 +179,8 @@ public class FirmaServlet extends HttpServlet {
         // Información del usuario (tabla)
         Table tablaUsuario = new Table(2);
         tablaUsuario.addCell("Nombre y Apellidos:");
-        tablaUsuario.addCell(cert.getName() + " " + cert.getSurname1());
+        String apellidosFull = (cert.getSurname1() + " " + (cert.getSurname2() != null ? cert.getSurname2() : "")).trim();
+        tablaUsuario.addCell(cert.getName() + " " + apellidosFull);
 
         tablaUsuario.addCell("NIF/NIE:");
         tablaUsuario.addCell(cert.getNumberUserId());
@@ -188,16 +195,6 @@ public class FirmaServlet extends HttpServlet {
 
         // Separador
         document.add(new Paragraph("\n"));
-
-        // Datos de la solicitud
-        Paragraph seccionSolicitud = new Paragraph("DATOS DE LA SOLICITUD")
-                .setBold()
-                .setFontSize(12);
-        document.add(seccionSolicitud);
-
-        document.add(new Paragraph("Motivo de la solicitud:"));
-        document.add(new Paragraph(motivo)
-                .setTextAlignment(TextAlignment.JUSTIFIED));
 
         // Separador
         document.add(new Paragraph("\n"));
@@ -227,6 +224,29 @@ public class FirmaServlet extends HttpServlet {
                 .setTextAlignment(TextAlignment.RIGHT)
                 .setItalic();
         document.add(firma);
+
+        // Añadir Código QR de validación al PDF
+        try {
+            String token = (String) request.getSession().getAttribute(AppConstants.SESSION_FIRMA_TOKEN);
+            String validationUrl = "https://sandbox.viafirma.com/sign-page/v/" + token;
+            String qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + URLEncoder.encode(validationUrl, "UTF-8");
+            
+            Image qrImage = new Image(ImageDataFactory.create(new URL(qrUrl)))
+                    .setHorizontalAlignment(com.itextpdf.layout.properties.HorizontalAlignment.RIGHT)
+                    .setMarginTop(10)
+                    .setWidth(80)  // Tamaño controlado en el PDF
+                    .setHeight(80);
+            
+            document.add(qrImage);
+            
+            Paragraph infoQr = new Paragraph("Escanea para validar la firma")
+                    .setTextAlignment(TextAlignment.RIGHT)
+                    .setFontSize(8)
+                    .setFontColor(com.itextpdf.kernel.colors.ColorConstants.GRAY);
+            document.add(infoQr);
+        } catch (Exception e) {
+            System.err.println("WARN: No se pudo añadir el QR al PDF: " + e.getMessage());
+        }
 
         // Cerrar documento
         document.close();

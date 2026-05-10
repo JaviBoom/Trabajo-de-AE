@@ -84,7 +84,7 @@ public class UploadResourceApi {
     };
     final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
 
-    String[] localVarAuthNames = new String[] {  };
+    String[] localVarAuthNames = new String[] { "basicAuth" };
 
     TypeReference<RequestResultDTO> localVarReturnType = new TypeReference<RequestResultDTO>() {};
     return apiClient.invokeAPI(
@@ -150,7 +150,7 @@ public class UploadResourceApi {
     };
     final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
 
-    String[] localVarAuthNames = new String[] {  };
+    String[] localVarAuthNames = new String[] { "basicAuth" };
 
     TypeReference<FileReferenceResponseDTO> localVarReturnType = new TypeReference<FileReferenceResponseDTO>() {};
     return apiClient.invokeAPI(

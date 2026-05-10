@@ -35,9 +35,35 @@ public class LoginServlet extends HttpServlet {
 
             System.out.println("INFO: Callback URL: " + callbackURL);
 
-            String authUrl = viafirmaService.requestAuthentication(callbackURL);
+            org.openapitools.client.model.RequestResultDTO result = viafirmaService.requestAuthentication(callbackURL);
 
-            System.out.println("INFO: Redirigiendo a Viafirma: " + authUrl);
+            String authUrl = result.getClientAccess().getLink();
+            if (authUrl == null || authUrl.isEmpty()) {
+                authUrl = result.getClientAccess().getDesktopProtocol();
+            }
+            String authCode = result.getCode();
+            
+            // TRUCO: Si Viafirma no devuelve el código explícitamente, lo extraemos del JWT en la URL
+            if (authCode == null || authCode.trim().isEmpty()) {
+                try {
+                    String jwt = authUrl.substring(authUrl.lastIndexOf('/') + 1);
+                    String jwtPayload = jwt.split("\\.")[1];
+                    // Añadir padding para evitar IllegalArgumentException en Java 8
+                    while (jwtPayload.length() % 4 != 0) {
+                        jwtPayload += "=";
+                    }
+                    String payload = new String(java.util.Base64.getUrlDecoder().decode(jwtPayload));
+                    authCode = payload.split("\"operationId\":\"")[1].split("\"")[0];
+                } catch (Exception e) {
+                    System.err.println("No se pudo extraer el operationId del JWT: " + e.getMessage());
+                }
+            }
+
+            // Guardar en el contexto global por si se pierde la sesión (SameSite cookies)
+            request.getServletContext().setAttribute("GLOBAL_PENDING_CODE", authCode);
+            request.getSession().setAttribute("pending_viafirma_code", authCode);
+
+            System.out.println("INFO: Redirigiendo a Viafirma: " + authUrl + " con codigo: " + authCode);
             response.sendRedirect(authUrl);
 
         } catch (Exception e) {

@@ -18,14 +18,43 @@ import org.openapitools.client.model.ClientAccessResponseDTO;
 public class FirmaCallbackServlet extends HttpServlet {
 
     @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        doGet(request, response);
+    }
+
+    @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+            
+        System.out.println("DEBUG: Callback recibido (Metodo: " + request.getMethod() + ")");
+        System.out.println("DEBUG: Full URL: " + request.getRequestURL().toString() + (request.getQueryString() != null ? "?" + request.getQueryString() : ""));
 
+        System.out.println("DEBUG: Full URL: " + request.getRequestURL().toString() + (request.getQueryString() != null ? "?" + request.getQueryString() : ""));
+        
         String code = request.getParameter("code");
+        if (code == null || code.isEmpty()) {
+            code = request.getParameter("operationId");
+        }
+        
+        // Si sigue siendo nulo, lo buscamos en la sesión (lo guardamos en FirmaServlet)
+        if (code == null || code.isEmpty()) {
+            code = (String) request.getSession().getAttribute(AppConstants.SESSION_FIRMA_TOKEN);
+            System.out.println("INFO: Recuperando código de firma desde la sesión: " + code);
+        }
+        
         String error = request.getParameter("error");
 
         System.out.println("INFO: Callback de firma recibido desde Viafirma");
-        System.out.println("INFO: Código: " + code);
+        System.out.println("INFO: Código (code): " + code);
+        System.out.println("INFO: Error (error): " + error);
+        
+        // Log de todos los parámetros para depuración
+        java.util.Enumeration<String> params = request.getParameterNames();
+        while(params.hasMoreElements()){
+            String pName = params.nextElement();
+            System.out.println("DEBUG: Param: " + pName + " = " + request.getParameter(pName));
+        }
 
         // Validar que no haya error de Viafirma
         if (error != null && !error.isEmpty()) {
@@ -38,9 +67,14 @@ public class FirmaCallbackServlet extends HttpServlet {
 
         // Validar que el código no sea nulo o vacío
         if (code == null || code.trim().isEmpty()) {
-            System.err.println("ERROR: Código de firma nulo o vacío");
-            request.setAttribute(AppConstants.REQUEST_ERROR,
-                    "Código de firma inválido");
+            StringBuilder sb = new StringBuilder("Código de firma inválido. Parámetros recibidos: ");
+            java.util.Enumeration<String> pNames = request.getParameterNames();
+            while(pNames.hasMoreElements()){
+                String n = pNames.nextElement();
+                sb.append(n).append("=").append(request.getParameter(n)).append("; ");
+            }
+            System.err.println("ERROR: " + sb.toString());
+            request.setAttribute(AppConstants.REQUEST_ERROR, sb.toString());
             request.getRequestDispatcher(AppConstants.PAGE_ERROR).forward(request, response);
             return;
         }
@@ -51,6 +85,29 @@ public class FirmaCallbackServlet extends HttpServlet {
 
             // Obtener acceso a la firma (incluye URL del PDF firmado)
             ClientAccessResponseDTO firmaAcceso = viafirmaService.getSignatureAccess(code);
+            
+            // INTENTO DE DESCARGA FÍSICA DEL PDF FIRMADO
+            if (firmaAcceso != null && firmaAcceso.getLink() != null) {
+                try {
+                    // Consultar el estado para obtener el enlace de descarga real (signedLink)
+                    org.openapitools.client.model.RequestStatusResponseDTO status = viafirmaService.getSignatureStatus(code);
+                    if (status != null && status.getOperations() != null && !status.getOperations().isEmpty()) {
+                        String signedLink = status.getOperations().get(0).getSignedLink();
+                        if (signedLink != null) {
+                            byte[] pdfFirmadoBytes = viafirmaService.downloadSignedPdf(signedLink);
+                            
+                            // Sobrescribir el archivo local con el firmado
+                            String localPath = (String) request.getSession().getAttribute(AppConstants.SESSION_PDF_RUTA);
+                            if (localPath != null) {
+                                java.nio.file.Files.write(java.nio.file.Paths.get(localPath), pdfFirmadoBytes);
+                                System.out.println("INFO: Archivo local actualizado con la versión FIRMADA digitalmente");
+                            }
+                        }
+                    }
+                } catch (Exception ex) {
+                    System.err.println("WARN: No se pudo descargar el PDF firmado en el callback: " + ex.getMessage());
+                }
+            }
 
             // Guardar en sesión para confirmación
             request.getSession().setAttribute(AppConstants.SESSION_FIRMA_COMPLETADA, true);

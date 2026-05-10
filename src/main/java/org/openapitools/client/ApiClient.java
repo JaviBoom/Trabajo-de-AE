@@ -16,10 +16,9 @@ import com.fasterxml.jackson.annotation.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.OffsetDateTime;
-import com.fasterxml.jackson.jaxrs.json.JacksonJsonProvider;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JavaType;
+
 
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
@@ -45,17 +44,7 @@ import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
 import org.apache.http.cookie.Cookie;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Arrays;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.TimeZone;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -359,7 +348,6 @@ public class ApiClient extends JavaTimeFormatter {
    * @return API client
    */
   public ApiClient setDebugging(boolean debugging) {
-    // TODO: implement debugging mode
     this.debugging = debugging;
     return this;
   }
@@ -481,7 +469,7 @@ public class ApiClient extends JavaTimeFormatter {
    * @param value The value of the parameter.
    * @return A list of {@code Pair} objects.
    */
-  public List<Pair> parameterToPairs(String collectionFormat, String name, Collection value) {
+  public List<Pair> parameterToPairs(String collectionFormat, String name, Collection<?> value) {
     List<Pair> params = new ArrayList<Pair>();
 
     // preconditions
@@ -650,7 +638,7 @@ public class ApiClient extends JavaTimeFormatter {
       }
     } else if (mimeType.equals(ContentType.MULTIPART_FORM_DATA.getMimeType())) {
       MultipartEntityBuilder multiPartBuilder = MultipartEntityBuilder.create();
-      for (Entry<String, Object> paramEntry : formParams.entrySet()) {
+      for (Map.Entry<String, Object> paramEntry : formParams.entrySet()) {
         Object value = paramEntry.getValue();
         if (value instanceof File) {
           multiPartBuilder.addBinaryBody(paramEntry.getKey(), (File) value);
@@ -663,7 +651,7 @@ public class ApiClient extends JavaTimeFormatter {
       return multiPartBuilder.build();
     } else if (mimeType.equals(ContentType.APPLICATION_FORM_URLENCODED.getMimeType())) {
       List<NameValuePair> formValues = new ArrayList<>();
-      for (Entry<String, Object> paramEntry : formParams.entrySet()) {
+      for (Map.Entry<String, Object> paramEntry : formParams.entrySet()) {
         formValues.add(new BasicNameValuePair(paramEntry.getKey(), parameterToString(paramEntry.getValue())));
       }
       try {
@@ -685,6 +673,7 @@ public class ApiClient extends JavaTimeFormatter {
   /**
    * Deserialize response content
    */
+  @SuppressWarnings("unchecked")
   public <T> T deserialize(HttpResponse response, TypeReference<T> valueType) throws ApiException, IOException {
     if (valueType == null) {
       return null;
@@ -893,7 +882,7 @@ public class ApiClient extends JavaTimeFormatter {
     if (accept != null) {
       builder.addHeader("Accept", accept);
     }
-    for (Entry<String, String> keyValue : headerParams.entrySet()) {
+    for (Map.Entry<String, String> keyValue : headerParams.entrySet()) {
       builder.addHeader(keyValue.getKey(), keyValue.getValue());
     }
     for (Map.Entry<String,String> keyValue : defaultHeaderMap.entrySet()) {
@@ -903,10 +892,10 @@ public class ApiClient extends JavaTimeFormatter {
     }
 
     BasicCookieStore store = new BasicCookieStore();
-    for (Entry<String, String> keyValue : cookieParams.entrySet()) {
+    for (Map.Entry<String, String> keyValue : cookieParams.entrySet()) {
       store.addCookie(buildCookie(keyValue.getKey(), keyValue.getValue(), builder.getUri()));
     }
-    for (Entry<String,String> keyValue : defaultCookieMap.entrySet()) {
+    for (Map.Entry<String,String> keyValue : defaultCookieMap.entrySet()) {
       if (!cookieParams.containsKey(keyValue.getKey())) {
         store.addCookie(buildCookie(keyValue.getKey(), keyValue.getValue(), builder.getUri()));
       }

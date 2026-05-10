@@ -28,17 +28,21 @@ public class ViafirmaService {
      * Solicita autenticación a Viafirma
      * 
      * @param callbackUrl URL donde Viafirma enviará el código de autenticación
-     * @return URL del protocolo de escritorio para redirigir al usuario
+     * @return Objeto con los datos de acceso
      * @throws Exception Si hay error en la comunicación con Viafirma
      */
-    public String requestAuthentication(String callbackUrl) throws Exception {
+    public RequestResultDTO requestAuthentication(String callbackUrl) throws Exception {
         ApiClient client = new ApiClient();
         client.setUsername(USERNAME);
         client.setPassword(PASSWORD);
 
         ClientAuthResourceApi api = new ClientAuthResourceApi(client);
+
         PrepareAuthDTO auth = new PrepareAuthDTO();
-        auth.setCallbackURL(callbackUrl);
+        auth.setCallbackRedirectURL(callbackUrl);
+        // CRÍTICO: NO ESTABLECER callbackURL (webhook)!! 
+        // Si establecemos webhook, Viafirma manda el código al webhook y NO lo añade a la redirección del navegador.
+        // Al dejar el webhook vacío, forzamos a Viafirma a enviar ?code= directamente por la URL al navegador.
 
         RequestResultDTO result = api.requestAuthentication(auth);
 
@@ -46,12 +50,7 @@ public class ViafirmaService {
             throw new Exception("Respuesta inválida de Viafirma");
         }
 
-        String desktopProtocol = result.getClientAccess().getDesktopProtocol();
-        if (desktopProtocol == null || desktopProtocol.isEmpty()) {
-            throw new Exception("No se pudo obtener la URL de autenticación");
-        }
-
-        return desktopProtocol;
+        return result;
     }
 
     /**
@@ -66,10 +65,6 @@ public class ViafirmaService {
             throw new IllegalArgumentException("El código de autenticación es requerido");
         }
 
-        // Validar formato básico (alfanuméricos y guiones)
-        if (!code.matches("^[a-zA-Z0-9\\-]+$")) {
-            throw new IllegalArgumentException("Formato de código inválido");
-        }
 
         ApiClient client = new ApiClient();
         client.setUsername(USERNAME);
@@ -102,40 +97,106 @@ public class ViafirmaService {
         ApiClient client = new ApiClient();
         client.setUsername(USERNAME);
         client.setPassword(PASSWORD);
+        System.out.println("DEBUG: Archivo PDF para firma: " + pdfFile.getAbsolutePath() + " (" + pdfFile.length() + " bytes)");
 
         // 1) Solicitar token de subida y subir el archivo a Viafirma
         UploadResourceApi uploadApi = new UploadResourceApi(client);
-        RequestResultDTO uploadLinkResult = uploadApi.requestLink();
-        if (uploadLinkResult == null || uploadLinkResult.getCode() == null || uploadLinkResult.getCode().isEmpty()) {
-            throw new Exception("No se pudo obtener el token de subida de Viafirma");
+        RequestResultDTO uploadLinkResult = null;
+        try {
+            System.out.println("DEBUG: PASO 1 - Solicitando requestLink...");
+            uploadLinkResult = uploadApi.requestLink();
+        } catch (org.openapitools.client.ApiException e) {
+            throw new Exception("Error en PASO 1 (requestLink): " + e.getCode() + " - " + e.getResponseBody());
         }
 
-        FileReferenceResponseDTO uploadResult = uploadApi.uploadFile(uploadLinkResult.getCode(), pdfFile);
-        if (uploadResult == null || uploadResult.getReference() == null || uploadResult.getReference().isEmpty()) {
-            throw new Exception("No se pudo subir el PDF a Viafirma");
+        if (uploadLinkResult == null || uploadLinkResult.getCode() == null) {
+            throw new Exception("Error en PASO 1: Respuesta nula de Viafirma");
         }
 
-        // 2) Preparar solicitud de firma usando la referencia de archivo subida
+        FileReferenceResponseDTO uploadResult = null;
+        try {
+            System.out.println("DEBUG: PASO 2 - Subiendo archivo a Viafirma...");
+            uploadResult = uploadApi.uploadFile(uploadLinkResult.getCode(), pdfFile);
+        } catch (org.openapitools.client.ApiException e) {
+            throw new Exception("Error en PASO 2 (uploadFile): " + e.getCode() + " - " + e.getResponseBody());
+        }
+
+        if (uploadResult == null || uploadResult.getReference() == null) {
+            throw new Exception("Error en PASO 2: Error al obtener referencia del archivo subido");
+        }
+
+        // 2) Preparar solicitud de firma
         ClientSignatureResourceApi api = new ClientSignatureResourceApi(client);
         PrepareRequestDTO prepareRequest = new PrepareRequestDTO();
         PrepareSignatureRequestDTO signature = new PrepareSignatureRequestDTO();
-        signature.setSourceId(uploadResult.getReference());
-        signature.setFileName(pdfFile.getName());
+        
+        // Enviamos el archivo directamente en Base64 para evitar problemas con referencias
+        byte[] fileContent = java.nio.file.Files.readAllBytes(pdfFile.toPath());
+        String base64File = java.util.Base64.getEncoder().encodeToString(fileContent);
+        
+        signature.setFile(base64File);
+        signature.setFileName(sanitize(pdfFile.getName()));
         signature.setFileType("pdf");
         if (description != null && !description.trim().isEmpty()) {
-            signature.setRequestCode(description);
+            signature.setRequestCode(sanitize(description));
         }
 
+        // Configuración de firma (obligatoria por lo visto)
+        org.openapitools.client.model.ConfigSignatureDTO config = new org.openapitools.client.model.ConfigSignatureDTO();
+        config.setSignatureType(org.openapitools.client.model.ConfigSignatureDTO.SignatureTypeEnum.PADES_B);
+        config.setPackaging(org.openapitools.client.model.ConfigSignatureDTO.PackagingEnum.ENVELOPED); // Obligatorio
+        config.setFileName(sanitize(pdfFile.getName())); // Lo pide explícitamente el servidor
+        config.setValidSignerIds(new java.util.ArrayList<String>()); // Evita el error de "array length is null"
+        
+        // Configuración de sello visual (Stamper)
+        org.openapitools.client.model.ConfigPadesDTO pades = new org.openapitools.client.model.ConfigPadesDTO();
+        org.openapitools.client.model.StamperDTO stamper = new org.openapitools.client.model.StamperDTO();
+        stamper.setType(org.openapitools.client.model.StamperDTO.TypeEnum.QR);
+        stamper.setPage(-1); 
+        stamper.setxAxis(400);
+        stamper.setyAxis(50);
+        pades.setStamper(stamper);
+        config.setPadesConfig(pades);
+
+        // Añadir metadatos para mejorar la auditoría
+        config.setSignatureReason("Aceptacion de participacion y firma digital");
+        config.setCountry("Espana");
+        
+        signature.setConfiguration(config);
+
         prepareRequest.setCount(1);
-        prepareRequest.setCallbackURL(callbackUrl);
-        prepareRequest.addSignaturesItem(signature);
+        prepareRequest.setCallbackRedirectURL(callbackUrl);
+        
+        // Filtro de certificado para obligar a usar el mismo que en el login
+        org.openapitools.client.model.ConfigCertificateRequestDTO certFilter = new org.openapitools.client.model.ConfigCertificateRequestDTO();
+        if (pdfFile.getName().contains("_")) {
+            // Intentamos extraer el NIF del nombre del archivo si no lo pasamos por parámetro
+            // En una refactorización ideal, pasaríamos el NIF directamente al método
+            String[] parts = pdfFile.getName().split("_");
+            if (parts.length > 1) {
+                String nif = parts[1];
+                org.openapitools.client.model.CertificateFilterDTO nifFilter = new org.openapitools.client.model.CertificateFilterDTO();
+                nifFilter.addFilterValuesItem(nif);
+                certFilter.setNationalIdFilter(nifFilter);
+                System.out.println("DEBUG: Aplicando filtro de certificado para NIF: " + nif);
+            }
+        }
+        prepareRequest.setCertificateFilter(certFilter);
+        
+        java.util.List<org.openapitools.client.model.PrepareSignatureRequestDTO> signatureList = new java.util.ArrayList<>();
+        signatureList.add(signature);
+        prepareRequest.setSignatures(signatureList);
 
-        System.out.println("INFO: Solicitando firma para archivo: " + pdfFile.getName());
-
-        RequestResultDTO result = api.requestSignature(prepareRequest);
+        RequestResultDTO result = null;
+        try {
+            System.out.println("DEBUG: PASO 3 - Solicitando firma final...");
+            result = api.requestSignature(prepareRequest);
+        } catch (org.openapitools.client.ApiException e) {
+            throw new Exception("Error en PASO 3 (requestSignature): " + e.getCode() + " - " + e.getResponseBody());
+        }
 
         if (result == null || result.getClientAccess() == null) {
-            throw new Exception("Respuesta inválida de Viafirma para firma");
+            throw new Exception("Error en PASO 3: Respuesta de firma inválida");
         }
 
         return result;
@@ -179,10 +240,6 @@ public class ViafirmaService {
             throw new IllegalArgumentException("El código de firma es requerido");
         }
 
-        // Validar formato básico
-        if (!code.matches("^[a-zA-Z0-9\\-]+$")) {
-            throw new IllegalArgumentException("Formato de código inválido");
-        }
 
         ApiClient client = new ApiClient();
         client.setUsername(USERNAME);
@@ -196,5 +253,30 @@ public class ViafirmaService {
         }
 
         return access;
+    }
+
+    /**
+     * Elimina acentos y caracteres especiales que puedan dar problemas con UTF-8
+     */
+    /**
+     * Descarga el PDF firmado desde la URL de Viafirma
+     */
+    public byte[] downloadSignedPdf(String signedLink) throws Exception {
+        System.out.println("INFO: Descargando PDF firmado desde: " + signedLink);
+        java.net.URL url = new java.net.URL(signedLink);
+        try (java.io.InputStream in = url.openStream();
+             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = in.read(buffer)) != -1) {
+                out.write(buffer, 0, bytesRead);
+            }
+            return out.toByteArray();
+        }
+    }
+
+    private String sanitize(String name) {
+        if (name == null) return "documento.pdf";
+        return name.replaceAll("[^a-zA-Z0-9.\\-_]", "_");
     }
 }

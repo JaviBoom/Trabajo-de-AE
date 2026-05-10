@@ -24,8 +24,20 @@ public class CallbackServlet extends HttpServlet {
         String code = request.getParameter("code");
         String error = request.getParameter("error");
 
+        // TRUCO: Si Viafirma no envía el código por URL, lo recuperamos del HACK del LoginServlet
+        if (code == null || code.trim().isEmpty()) {
+            code = (String) request.getSession().getAttribute("pending_viafirma_code");
+            if (code == null || code.trim().isEmpty()) {
+                code = (String) request.getServletContext().getAttribute("GLOBAL_PENDING_CODE");
+            }
+        }
+
         System.out.println("INFO: Callback recibido desde Viafirma");
         System.out.println("INFO: Código: " + code);
+
+        // Limpiar las variables temporales
+        request.getSession().removeAttribute("pending_viafirma_code");
+        request.getServletContext().removeAttribute("GLOBAL_PENDING_CODE");
 
         // Validar que no haya error de Viafirma
         if (error != null && !error.isEmpty()) {
@@ -60,7 +72,7 @@ public class CallbackServlet extends HttpServlet {
             System.out.println("INFO: [" + sessionId + "] Autenticación exitosa para: " +
                     cert.getName() + " " + cert.getSurname1());
 
-            response.sendRedirect(AppConstants.PAGE_DATOS);
+            response.sendRedirect(response.encodeRedirectURL(AppConstants.PAGE_INDEX));
 
         } catch (IllegalArgumentException e) {
             System.err.println("ERROR: Argumento inválido: " + e.getMessage());
@@ -75,5 +87,11 @@ public class CallbackServlet extends HttpServlet {
                     "Error al procesar la autenticación: " + e.getMessage());
             request.getRequestDispatcher(AppConstants.PAGE_ERROR).forward(request, response);
         }
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        doGet(request, response);
     }
 }

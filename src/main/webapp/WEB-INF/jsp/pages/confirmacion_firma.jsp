@@ -241,27 +241,14 @@
         org.openapitools.client.model.CertificateResponseDTO cert = 
             (org.openapitools.client.model.CertificateResponseDTO) session.getAttribute("certificado");
         
-        String nombreUsuario = cert != null ? (cert.getName() + " " + cert.getSurname1()).trim() : "Usuario";
+        String apellidos = (cert.getSurname1() + " " + (cert.getSurname2() != null ? cert.getSurname2() : "")).trim();
+        String nombreUsuario = cert != null ? (cert.getName() + " " + apellidos).trim() : "Usuario";
         String nif = cert != null ? cert.getNumberUserId() : "N/A";
 
-        String validationTarget = null;
-        if (firmaAcceso != null) {
-            if (firmaAcceso.getLink() != null && !firmaAcceso.getLink().trim().isEmpty()
-                    && (firmaAcceso.getLink().startsWith("http://") || firmaAcceso.getLink().startsWith("https://"))) {
-                validationTarget = firmaAcceso.getLink();
-            } else if (firmaAcceso.getFortressLink() != null && !firmaAcceso.getFortressLink().trim().isEmpty()
-                    && (firmaAcceso.getFortressLink().startsWith("http://") || firmaAcceso.getFortressLink().startsWith("https://"))) {
-                validationTarget = firmaAcceso.getFortressLink();
-            }
-        }
-
-        if (validationTarget == null) {
-            validationTarget = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort()
-                    + request.getContextPath() + "/DescargarPdfFirmadoServlet";
-        }
-
+        String token = (String) session.getAttribute(com.example.proyecto_ae.config.AppConstants.SESSION_FIRMA_TOKEN);
+        String validationTarget = "https://sandbox.viafirma.com/sign-page/v/" + token;
         String qrData = URLEncoder.encode(validationTarget, "UTF-8");
-        String qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=170x170&data=" + qrData;
+        String qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + qrData;
     %>
 
     <div class="firma-box">
@@ -300,7 +287,7 @@
                 <div class="cajetin-firma">
                     <h4>CAJETÍN DE FIRMA</h4>
                     <p style="font-size: 12px; margin-bottom: 10px;">Código QR para validar la firma</p>
-                    <div class="qr-placeholder">
+                    <div class="qr-placeholder" style="background: white; padding: 15px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 170px; height: 170px; margin: 0 auto;">
                         <img src="<%= qrUrl %>" alt="QR de validación" style="width: 100%; height: 100%; border-radius: 4px;" />
                     </div>
                     <p style="font-size: 11px; margin-top: 10px;">Escanea este código para validar la firma</p>
@@ -312,9 +299,28 @@
                 <p><strong>Estado:</strong> Firmado</p>
                 <p><strong>Tipo:</strong> Firma Digital Avanzada</p>
                 <p><strong>Certificado:</strong> Viafirma</p>
-                <p><strong>Motivo:</strong> <%= motivoFirma != null ? motivoFirma : "Participación" %></p>
                 <p style="margin-top: 20px; color: #28a745; font-weight: bold;">✓ La firma es válida y verificable</p>
             </div>
+        </div>
+
+        <div class="firma-section" style="margin-bottom: 30px;">
+            <h3>📄 Previsualización del Documento</h3>
+            <iframe src="DescargarPdfFirmadoServlet" width="100%" height="600px" style="border: none; border-radius: 8px;"></iframe>
+            
+            <script>
+                // Autodescarga al cargar la página
+                window.onload = function() {
+                    console.log("Iniciando autodescarga...");
+                    setTimeout(function() {
+                        const link = document.createElement('a');
+                        link.href = 'DescargarPdfFirmadoServlet';
+                        link.download = '<%= pdfGenerado %>';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }, 1000); // Esperamos 1 segundo para asegurar que el servidor procesó el callback
+                };
+            </script>
         </div>
 
         <div style="background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin-bottom: 30px; font-size: 13px; color: #555;">

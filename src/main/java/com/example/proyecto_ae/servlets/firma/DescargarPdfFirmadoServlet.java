@@ -13,6 +13,7 @@ import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import com.example.proyecto_ae.services.ViafirmaService;
 import org.openapitools.client.model.ClientAccessResponseDTO;
 
 /**
@@ -34,43 +35,49 @@ public class DescargarPdfFirmadoServlet extends HttpServlet {
             return;
         }
 
-        // 1) Intentar descargar desde la URL de acceso de Viafirma (si existe)
-        ClientAccessResponseDTO firmaAcceso = (ClientAccessResponseDTO) request.getSession()
-                .getAttribute(AppConstants.SESSION_FIRMA_ACCESO);
-
-        String remoteLink = firmaAcceso != null ? firmaAcceso.getLink() : null;
-        if (remoteLink != null && (remoteLink.startsWith("http://") || remoteLink.startsWith("https://"))) {
-            try {
-                streamRemotePdf(remoteLink, fileName, response);
+        // 1) Intentar descargar el archivo LOCAL (que ya ha sido sobrescrito con el firmado en el Callback)
+        String localPath = (String) request.getSession().getAttribute(AppConstants.SESSION_PDF_RUTA);
+        if (localPath != null) {
+            java.io.File file = new java.io.File(localPath);
+            if (file.exists()) {
+                System.out.println("DEBUG: Descargando archivo local (versión firmada): " + localPath);
+                response.setContentType("application/pdf");
+                response.setHeader("Content-Disposition", "inline; filename=\"" + fileName + "\"");
+                response.setContentLength((int) file.length());
+                
+                try (java.io.FileInputStream fis = new java.io.FileInputStream(file);
+                     java.io.OutputStream os = response.getOutputStream()) {
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = fis.read(buffer)) != -1) {
+                        os.write(buffer, 0, bytesRead);
+                    }
+                }
                 return;
-            } catch (Exception ex) {
-                System.err.println("WARN: No se pudo descargar el PDF remoto de Viafirma, usando fallback local: " + ex.getMessage());
             }
         }
 
-        // 2) Fallback local (útil en modo mock y como respaldo)
-        String localPath = (String) request.getSession().getAttribute(AppConstants.SESSION_PDF_RUTA);
-        if (localPath == null || localPath.trim().isEmpty()) {
-            request.setAttribute(AppConstants.REQUEST_ERROR, "No se encontró la ruta local del documento");
-            request.getRequestDispatcher(AppConstants.PAGE_ERROR).forward(request, response);
-            return;
+        // 2) Si falla el local, intentar el remoto como último recurso
+        try {
+            String signedLink = null;
+            String token = (String) request.getSession().getAttribute(AppConstants.SESSION_FIRMA_TOKEN);
+            if (token != null) {
+                ViafirmaService viaService = new ViafirmaService();
+                org.openapitools.client.model.RequestStatusResponseDTO status = viaService.getSignatureStatus(token);
+                if (status != null && status.getOperations() != null && !status.getOperations().isEmpty()) {
+                    signedLink = status.getOperations().get(0).getSignedLink();
+                }
+            }
+            if (signedLink != null) {
+                streamRemotePdf(signedLink, fileName, response);
+                return;
+            }
+        } catch (Exception ex) {
+            System.err.println("WARN: Fallback remoto falló: " + ex.getMessage());
         }
 
-        File pdfFile = new File(localPath);
-        if (!pdfFile.exists() || !pdfFile.isFile()) {
-            request.setAttribute(AppConstants.REQUEST_ERROR, "El archivo PDF no existe en el servidor");
-            request.getRequestDispatcher(AppConstants.PAGE_ERROR).forward(request, response);
-            return;
-        }
-
-        response.setContentType("application/pdf");
-        response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
-        response.setContentLengthLong(pdfFile.length());
-
-        try (InputStream input = new FileInputStream(pdfFile);
-             OutputStream output = response.getOutputStream()) {
-            copy(input, output);
-        }
+        request.setAttribute(AppConstants.REQUEST_ERROR, "No se pudo recuperar el documento firmado ni el original");
+        request.getRequestDispatcher(AppConstants.PAGE_ERROR).forward(request, response);
     }
 
     private void streamRemotePdf(String remoteUrl, String fileName, HttpServletResponse response) throws IOException {
@@ -90,7 +97,7 @@ public class DescargarPdfFirmadoServlet extends HttpServlet {
         }
 
         response.setContentType(contentType);
-        response.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+        response.setHeader("Content-Disposition", "inline; filename=\"" + fileName + "\"");
 
         long contentLength = connection.getContentLengthLong();
         if (contentLength > 0) {

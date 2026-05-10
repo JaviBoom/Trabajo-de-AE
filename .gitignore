@@ -23,3 +23,10 @@ node_modules/
 
 # VSCode
 .vscode/
+
+# Maven local binary
+/apache-maven-*/
+/maven.zip
+debug_log.txt
+pdf_text*.txt
+ParseTest.java

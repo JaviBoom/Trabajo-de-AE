@@ -152,7 +152,7 @@ public class ClientSignatureResourceApi {
     };
     final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
 
-    String[] localVarAuthNames = new String[] {  };
+    String[] localVarAuthNames = new String[] { "basicAuth" };
 
     TypeReference<ForceFinishResponse> localVarReturnType = new TypeReference<ForceFinishResponse>() {};
     return apiClient.invokeAPI(
@@ -268,7 +268,7 @@ public class ClientSignatureResourceApi {
     };
     final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
 
-    String[] localVarAuthNames = new String[] {  };
+    String[] localVarAuthNames = new String[] { "basicAuth" };
 
     TypeReference<RequestStatusResponseDTO> localVarReturnType = new TypeReference<RequestStatusResponseDTO>() {};
     return apiClient.invokeAPI(
@@ -328,7 +328,7 @@ public class ClientSignatureResourceApi {
     };
     final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
 
-    String[] localVarAuthNames = new String[] {  };
+    String[] localVarAuthNames = new String[] { "basicAuth" };
 
     TypeReference<RequestStatusResponseDTO> localVarReturnType = new TypeReference<RequestStatusResponseDTO>() {};
     return apiClient.invokeAPI(
