@@ -1,2 +1,2 @@
 <%@page contentType="text/html" pageEncoding="UTF-8"%>
-<jsp:forward page="/WEB-INF/jsp/pages/registro.jsp" />
+<jsp:forward page="/WEB-INF/jsp/pages/validar.jsp" />
