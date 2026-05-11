@@ -32,7 +32,7 @@ public class LoginServlet extends HttpServlet {
 
             String callbackURL = scheme + "://" + serverName + ":" + serverPort +
                     contextPath + AppConstants.AUTH_CALLBACK_URL;
-
+            
             System.out.println("INFO: Callback URL: " + callbackURL);
 
             org.openapitools.client.model.RequestResultDTO result = viafirmaService.requestAuthentication(callbackURL);

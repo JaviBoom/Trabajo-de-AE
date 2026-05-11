@@ -144,7 +144,9 @@ public class VerifierCertificateDTO {
     
     VCTL("VCTL"),
     
-    KS("KS");
+    KS("KS"),
+    
+    TL("TL");
 
     private String value;
 
